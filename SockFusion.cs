@@ -9,6 +9,8 @@ public class SockFusionManager : MonoBehaviour
     private Collider sock1 = null;
     private Collider sock2 = null;
     private bool hasFused = false;
+    private float lastFusionTime = 0f;
+    private float fusionCooldown = 0.5f; // Tiempo de espera entre fusiones
 
     void Update()
     {
@@ -16,7 +18,13 @@ public class SockFusionManager : MonoBehaviour
         sock1 = GetTouchingObject(detector1);
         sock2 = GetTouchingObject(detector2);
 
-        if (!hasFused)
+        // Reinicia el estado de fusión si han pasado suficientes frames sin calcetines
+        if (sock1 == null && sock2 == null)
+        {
+            hasFused = false;
+        }
+
+        if (!hasFused && Time.time - lastFusionTime > fusionCooldown)
         {
             if (sock1 != null && sock2 != null && sock1 != sock2)
             {
@@ -62,7 +70,8 @@ public class SockFusionManager : MonoBehaviour
                             Debug.LogWarning($"Pair object not found in {toShowPair.name}");
                         }
 
-                        hasFused = true;  // Marca que la fusión ocurrió para este par
+                        hasFused = true;
+                        lastFusionTime = Time.time;
                     }
                 }
                 else
@@ -73,10 +82,9 @@ public class SockFusionManager : MonoBehaviour
         }
         else
         {
-            // Si se sueltan los calcetines (o los detectores dejan de tocarlos), reinicia hasFused para permitir otro evento
-            if (sock1 == null || sock2 == null || !AreTouching(sock1, sock2))
+            // Si se sueltan los calcetines, reinicia hasFused para permitir otro evento
+            if (sock1 == null || sock2 == null)
             {
-                Debug.Log("Resetting hasFused state, ready for next fusion.");
                 hasFused = false;
             }
         }
@@ -84,6 +92,8 @@ public class SockFusionManager : MonoBehaviour
 
     private Collider GetTouchingObject(GameObject detector)
     {
+        if (detector == null) return null;
+        
         Collider[] hits = Physics.OverlapSphere(detector.transform.position, detectionRadius);
         foreach (Collider hit in hits)
         {
@@ -99,7 +109,6 @@ public class SockFusionManager : MonoBehaviour
     {
         if (a == null || b == null) return false;
         float distance = Vector3.Distance(a.transform.position, b.transform.position);
-        // Debug.Log($"Distance between {a.name} and {b.name}: {distance}");
         return distance < detectionRadius;
     }
 }
