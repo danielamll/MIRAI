@@ -9,6 +9,8 @@ public class SpiderTriggerSettings
 {
     public GameObject prefab;
     public int spawnCount;
+    public float minDistance = 1.5f; // R1
+    public float maxDistance = 3.0f; // R2
 }
 
 public class SpiderPerTrigger : MonoBehaviour
@@ -108,11 +110,11 @@ public class SpiderPerTrigger : MonoBehaviour
         else if (currentSpiders.Count < desiredCount)
         {
             int toSpawn = desiredCount - currentSpiders.Count;
-            SpawnSpiders(triggerLevel, config.prefab, toSpawn);
+            SpawnSpiders(triggerLevel, config.prefab, toSpawn, config.minDistance, config.maxDistance);
         }
     }
 
-    void SpawnSpiders(int triggerLevel, GameObject prefab, int count)
+    void SpawnSpiders(int triggerLevel, GameObject prefab, int count, float minDistance, float maxDistance)
     {
         Vector3 center = spawnArea.position;
         Vector3 size = spawnArea.localScale;
@@ -125,7 +127,41 @@ public class SpiderPerTrigger : MonoBehaviour
 
             Vector3 randomPos = center + new Vector3(x, y, z);
             GameObject spider = Instantiate(prefab, randomPos, Quaternion.identity);
+            spider.SetActive(true); // <--- 🔥 This re-activates the clone
+
+
+            // Agrega el DistanceConstraint
+            DistanceConstraint constraint = spider.AddComponent<DistanceConstraint>();
+            constraint.center = center;
+            constraint.minDistance = minDistance;
+            constraint.maxDistance = maxDistance;
+
             spawnedSpidersPerTrigger[triggerLevel].Add(spider);
+
+            Debug.Log($"[SPAWN] Instantiated spider for trigger {triggerLevel} at {randomPos}");
+        }
+    }
+}
+
+public class DistanceConstraint : MonoBehaviour
+{
+    public Vector3 center;
+    public float minDistance = 1.5f;
+    public float maxDistance = 3.0f;
+
+    void Update()
+    {
+        float distance = Vector3.Distance(transform.position, center);
+
+        if (distance < minDistance)
+        {
+            Vector3 dir = (transform.position - center).normalized;
+            transform.position = center + dir * minDistance;
+        }
+        else if (distance > maxDistance)
+        {
+            Vector3 dir = (transform.position - center).normalized;
+            transform.position = center + dir * maxDistance;
         }
     }
 }

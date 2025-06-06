@@ -3,73 +3,52 @@ using UnityEngine;
 
 public class SpiderMovement : MonoBehaviour
 {
-    public float moveSpeed = 0.5f;       // Velocidad de movimiento
-    public float rotationSpeed = 20f;    // Velocidad de giro (grados por segundo)
-    public float directionChangeInterval = 0.5f; // Cada cuánto cambia dirección (segundos)
-    public Animator spiderAnimator;      // Asignas aquí tu Animator
+    public float moveSpeed = 0.5f;
+    public float rotationSpeed = 90f; // Degrees per second
+    public float directionChangeInterval = 2f;
+    public Animator spiderAnimator;
 
     private Vector3 moveDirection;
     private float timeSinceLastChange;
 
     void Start()
     {
-        // Inicializa con un movimiento hacia adelante
-        moveDirection = transform.forward;
-        timeSinceLastChange = 0f;
+        ChooseRandomDirection();
 
         if (spiderAnimator != null)
         {
-            spiderAnimator.SetBool("IsWalking", true); // Asegúrate de tener este parámetro en tu Animator
+            spiderAnimator.SetBool("IsWalking", true);
         }
     }
 
     void Update()
     {
-        // Mueve la araña hacia la dirección actual
         transform.position += moveDirection * moveSpeed * Time.deltaTime;
 
-        // Lógica para cambiar la dirección cada ciertos segundos
         timeSinceLastChange += Time.deltaTime;
         if (timeSinceLastChange >= directionChangeInterval)
         {
-            ChangeDirection();
+            ChooseRandomDirection();
             timeSinceLastChange = 0f;
         }
     }
 
-    void ChangeDirection()
+    void ChooseRandomDirection()
     {
-        // Decide aleatoriamente si va a girar o moverse hacia un lado
-        int randomChoice = Random.Range(0, 3);
-
-        if (randomChoice == 0)
-        {
-            // Girar a la derecha
-            StartCoroutine(RotateSpider(rotationSpeed));
-        }
-        else if (randomChoice == 1)
-        {
-            // Girar a la izquierda
-            StartCoroutine(RotateSpider(-rotationSpeed));
-        }
-        else
-        {
-            // Sigue moviéndose recto, pero opcionalmente podrías hacer algo más aquí
-            moveDirection = transform.forward;
-        }
-    }
-
-    IEnumerator RotateSpider(float rotationAngle)
-    {
-        float rotated = 0f;
-        while (rotated < Mathf.Abs(rotationAngle))
-        {
-            float step = rotationSpeed * Time.deltaTime;
-            transform.Rotate(0, Mathf.Sign(rotationAngle) * step, 0);
-            rotated += step;
-            yield return null;
-        }
-        // Actualiza la nueva dirección después de girar
+        // Pick a random rotation angle (0-360)
+        float randomAngle = Random.Range(0f, 360f);
+        transform.rotation = Quaternion.Euler(0f, randomAngle, 0f);
         moveDirection = transform.forward;
     }
+
+    void OnCollisionEnter(Collision collision)
+    {
+        // Ignore collisions with ground or other spiders if needed
+        if (collision.gameObject.CompareTag("Ground")) return;
+
+        // Change direction immediately on bump
+        ChooseRandomDirection();
+        timeSinceLastChange = 0f;
+    }
 }
+
