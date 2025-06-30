@@ -5,26 +5,31 @@ using UnityEngine;
 using LSL;
 
 [System.Serializable]
-public class SpiderTriggerSettings
+public class SpiderAreaTriggerSettings
 {
     public GameObject prefab;
     public int spawnCount;
-    public float minDistance = 1.5f; // R1
-    public float maxDistance = 3.0f; // R2
+    public float minDistance = 1.5f;
+    public float maxDistance = 3.0f;
+    public Transform spawnArea;
+    public GameObject barrier;
+
+    [Header("Animación")]
+    public bool enableAnimation = true; // Se usa el Animator del prefab instanciado
 }
 
-public class SpiderPerTrigger : MonoBehaviour
+public class SpiderAreaPerTrigger : MonoBehaviour
 {
     [Header("LSL Settings")]
-    public string streamName = "Markers";
+    public string streamName = "Spawner";
 
     [Header("Spiders per Trigger")]
-    public SpiderTriggerSettings[] spiderTriggers = new SpiderTriggerSettings[6];
-    public Transform spawnArea;
+    public SpiderAreaTriggerSettings[] spiderTriggers = new SpiderAreaTriggerSettings[6];
 
     private List<GameObject>[] spawnedSpidersPerTrigger = new List<GameObject>[6];
     private StreamInlet inlet;
     private StreamInfo[] results;
+    private StreamOutlet spiderTriggerOutlet;
 
     void Start()
     {
@@ -32,6 +37,10 @@ public class SpiderPerTrigger : MonoBehaviour
         {
             spawnedSpidersPerTrigger[i] = new List<GameObject>();
         }
+
+        var streamInfo = new StreamInfo("SpiderTrigger", "Markers", 1, 0, channel_format_t.cf_string, System.Guid.NewGuid().ToString());
+        spiderTriggerOutlet = new StreamOutlet(streamInfo);
+
         StartCoroutine(WaitForStream());
     }
 
@@ -61,6 +70,10 @@ public class SpiderPerTrigger : MonoBehaviour
             if (timestamp != 0.0)
             {
                 Debug.Log("[LSL] Received trigger: " + sample[0]);
+
+                // Enviar marker de salida para que lo capture Python
+                spiderTriggerOutlet.push_sample(new string[] { sample[0] });
+
                 if (int.TryParse(sample[0], out int triggerLevel))
                 {
                     triggerLevel = Mathf.Clamp(triggerLevel, 0, 5);
@@ -72,17 +85,16 @@ public class SpiderPerTrigger : MonoBehaviour
 
     void UpdateSpiders(int triggerLevel)
     {
-        SpiderTriggerSettings config = spiderTriggers[triggerLevel];
-        if (config == null || config.prefab == null)
+        SpiderAreaTriggerSettings config = spiderTriggers[triggerLevel];
+        if (config == null || config.prefab == null || config.spawnArea == null)
         {
-            Debug.LogWarning($"No prefab configured for trigger {triggerLevel}");
+            Debug.LogWarning($"Missing settings for trigger {triggerLevel}");
             return;
         }
 
         int desiredCount = config.spawnCount;
         List<GameObject> currentSpiders = spawnedSpidersPerTrigger[triggerLevel];
 
-        // Elimina spiders de otros niveles
         for (int i = 0; i < spawnedSpidersPerTrigger.Length; i++)
         {
             if (i != triggerLevel)
@@ -92,7 +104,17 @@ public class SpiderPerTrigger : MonoBehaviour
                     if (obj != null) Destroy(obj);
                 }
                 spawnedSpidersPerTrigger[i].Clear();
+
+                if (spiderTriggers[i].barrier != null)
+                {
+                    spiderTriggers[i].barrier.SetActive(false);
+                }
             }
+        }
+
+        if (config.barrier != null)
+        {
+            config.barrier.SetActive(true);
         }
 
         if (currentSpiders.Count > desiredCount)
@@ -110,40 +132,59 @@ public class SpiderPerTrigger : MonoBehaviour
         else if (currentSpiders.Count < desiredCount)
         {
             int toSpawn = desiredCount - currentSpiders.Count;
-            SpawnSpiders(triggerLevel, config.prefab, toSpawn, config.minDistance, config.maxDistance);
+            SpawnSpiders(triggerLevel, config);
+        }
+
+        // Activar animaciones en los objetos actuales si es necesario
+        foreach (var spider in currentSpiders)
+        {
+            if (spider != null && config.enableAnimation)
+            {
+                Animator animator = spider.GetComponent<Animator>();
+                if (animator != null)
+                    animator.enabled = true;
+            }
         }
     }
 
-    void SpawnSpiders(int triggerLevel, GameObject prefab, int count, float minDistance, float maxDistance)
+    void SpawnSpiders(int triggerLevel, SpiderAreaTriggerSettings config)
     {
-        Vector3 center = spawnArea.position;
-        Vector3 size = spawnArea.localScale;
-
-        for (int i = 0; i < count; i++)
+        BoxCollider box = config.spawnArea.GetComponentInChildren<BoxCollider>();
+        if (box == null)
         {
-            float x = UnityEngine.Random.Range(-size.x / 2f, size.x / 2f);
-            float y = UnityEngine.Random.Range(-size.y / 2f, size.y / 2f);
-            float z = UnityEngine.Random.Range(-size.z / 2f, size.z / 2f);
+            Debug.LogError("BoxCollider no encontrado en SpawnArea.");
+            return;
+        }
 
-            Vector3 randomPos = center + new Vector3(x, y, z);
-            GameObject spider = Instantiate(prefab, randomPos, Quaternion.identity);
-            spider.SetActive(true); // <--- 🔥 This re-activates the clone
+        for (int i = 0; i < config.spawnCount; i++)
+        {
+            Vector3 localPoint = new Vector3(
+                UnityEngine.Random.Range(-0.5f, 0.5f),
+                UnityEngine.Random.Range(-0.5f, 0.5f),
+                UnityEngine.Random.Range(-0.5f, 0.5f)
+            );
 
+            localPoint = Vector3.Scale(localPoint, box.size);
+            Vector3 worldPoint = box.transform.TransformPoint(localPoint + box.center);
 
-            // Agrega el DistanceConstraint
-            DistanceConstraint constraint = spider.AddComponent<DistanceConstraint>();
-            constraint.center = center;
-            constraint.minDistance = minDistance;
-            constraint.maxDistance = maxDistance;
+            GameObject spider = Instantiate(config.prefab, worldPoint, Quaternion.identity);
+            spider.SetActive(true);
+
+            if (config.enableAnimation)
+            {
+                Animator animator = spider.GetComponent<Animator>();
+                if (animator != null)
+                    animator.enabled = true;
+            }
 
             spawnedSpidersPerTrigger[triggerLevel].Add(spider);
 
-            Debug.Log($"[SPAWN] Instantiated spider for trigger {triggerLevel} at {randomPos}");
+            Debug.Log($"[SPAWN] Instantiated spider for trigger {triggerLevel} at {worldPoint}");
         }
     }
 }
 
-public class DistanceConstraint : MonoBehaviour
+public class AreaDistanceConstraint : MonoBehaviour
 {
     public Vector3 center;
     public float minDistance = 1.5f;
